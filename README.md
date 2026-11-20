@@ -29,6 +29,45 @@ dotnet run --project CarRental/CarRental.csproj --urls http://localhost:5068
 
 Abre `http://localhost:5068/swagger` y prueba ambos controladores. `POST` devuelve el identificador generado; `PUT` devuelve 204 si actualiza un registro o 404 si no existe. No se debe interpretar un error de conexion SQL como una lista vacia.
 
+## Registro y acceso con token
+
+La autenticacion usa MySQL/MariaDB y EF Core. Configura la contrasena de la base como secreto de usuario; no la escribas en archivos versionados:
+
+```powershell
+dotnet user-secrets init --project CarRental/CarRental.csproj
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=127.0.0.1;Port=3306;Database=CarRentalDb;User=root;Password=TU_CLAVE" --project CarRental/CarRental.csproj
+```
+
+En PowerShell tambien puedes definir temporalmente `ConnectionStrings__DefaultConnection` antes de iniciar la API. Para MariaDB cambia `Database:Engine` a `MariaDb` y `Database:Version` por la version instalada. En desarrollo se genera una clave JWT temporal si no existe `Jwt:Key`; para despliegue configura una clave aleatoria de al menos 32 caracteres con User Secrets o un gestor de secretos:
+
+```powershell
+dotnet user-secrets set "Jwt:Key" ([Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(64))) --project CarRental/CarRental.csproj
+```
+
+Si la base todavía no existe, créala desde MySQL Workbench o el cliente MySQL con `CREATE DATABASE CarRentalDb;`. Instala la herramienta de migraciones y crea la tabla `Usuarios`:
+
+```powershell
+dotnet tool install --global dotnet-ef --version 8.0.13
+dotnet ef migrations add CrearUsuarios --project CarRental/CarRental.csproj
+dotnet ef database update --project CarRental/CarRental.csproj
+```
+
+`POST /api/auth/register` recibe `username`, `email` y `password` (minimo 12 caracteres). El registro asigna el rol `User`; no acepta roles del cliente y guarda la contrasena con hash. `POST /api/auth/login` devuelve un JWT. En Swagger, pulsa `Authorize` y pega el token para probar `GET /api/auth/users/{id}` y `POST /api/vehiculos`; el perfil solo se muestra al usuario dueño o a un administrador. `DELETE /api/vehiculos/{id}` requiere rol `Admin`. Para promover una cuenta, un administrador de la base debe cambiar su rol manualmente despues de verificar su identidad, por ejemplo `UPDATE Usuarios SET Role = 'Admin' WHERE Username = 'admin_car';`; nunca se acepta el rol del registro publico. `GET /api/vehiculos` es publico.
+
+Ejemplo para `POST /api/auth/register`:
+
+```json
+{ "username": "admin_car", "email": "admin@example.test", "password": "Password123!" }
+```
+
+Ejemplo para `POST /api/auth/login`:
+
+```json
+{ "username": "admin_car", "password": "Password123!" }
+```
+
+La respuesta contiene `token` y `expiresAt`. En Swagger usa `Authorize` con el token, sin escribir `Bearer` al inicio. Para probar `POST /api/vehiculos`, envia el texto JSON `"Toyota Prius"`.
+
 Ejemplo de pais para `POST /IsoCountries`:
 
 ```json
